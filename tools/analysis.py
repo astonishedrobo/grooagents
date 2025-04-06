@@ -99,7 +99,7 @@ def generate_embeddings(state: Annotated[dict, InjectedState]) -> dict:
     embeddings = inference_model.inference()
 
     # Save the embeddings to local storage
-    with open('embeddings.pkl', 'wb') as f:
+    with open(os.path.join(cwd, "cache", 'embeddings.pkl'), 'wb') as f:
         pkl.dump(embeddings, f)
 
     return {'messages': 'Embeddings generated and saved to local storage.'}
@@ -122,7 +122,8 @@ def run_clustering(state: Annotated[dict, InjectedState]) -> dict:
     if not os.path.exists(embeddings_path):
         raise FileNotFoundError(f"Embeddings file not found at {embeddings_path}")
     else:
-        embeddings = pkl.load(embeddings_path)
+        with open(embeddings_path, 'rb') as f:
+            embeddings = pkl.load(f)
 
     # Run clustering algorithm
     cluster_num = find_optimal_clusters()
