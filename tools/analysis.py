@@ -6,7 +6,7 @@ from typing import Annotated, Optional
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
 from .orchestrate import orchestrator
-from grooagents.utils.tools import create_cache_dir
+from grooagents.utils.tools import create_cache_dir, load_config
 from grooagents.utils.embeddings_model.trainer import EmbeddingsTrainer
 from grooagents.utils.embeddings_model.inference import EmbeddingsInference
 import os
@@ -80,6 +80,7 @@ def generate_embeddings(state: Annotated[dict, InjectedState]) -> dict:
     # Load the DataFrame and get the Selected features
     dataP = os.path.join(os.getcwd(), "input", "data.csv")
     df = pd.read_csv(dataP)
+    config = load_config()
 
     # Train or Load existing Embedding model
     cwd = os.getcwd()
@@ -91,7 +92,8 @@ def generate_embeddings(state: Annotated[dict, InjectedState]) -> dict:
         trainer.train()
     
     # Load the model
-    inference_model = EmbeddingsInference(data_file=dataP, model_path=os.path.join(cwd, "cache", "embedding_model.pt"))
+    variables = config.get("variables", [])
+    inference_model = EmbeddingsInference(data_file=dataP, model_path=os.path.join(cwd, "cache", "embedding_model.pt"), variables=variables)
 
     # Generate embeddings for each row in the DataFrame
     embeddings = inference_model.inference()
