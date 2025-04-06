@@ -46,7 +46,7 @@ class EmbeddingsInference:
     def prepare_data(self):
         """Load and prepare the data for inference"""
         # Load and preprocess data
-        df = load_and_preprocess_data(
+        self.df = load_and_preprocess_data(
             self.data_file, 
             self.continuous_cols, 
             self.categorical_cols, 
