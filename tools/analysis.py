@@ -83,6 +83,8 @@ def generate_embeddings(state: Annotated[dict, InjectedState]) -> dict:
 
     # Train or Load existing Embedding model
     cwd = os.getcwd()
+    create_cache_dir()
+    
     if not os.path.exists(os.path.join(cwd, "cache", "embedding_model.pt")):
         # Train the model
         trainer = EmbeddingsTrainer(data_file=dataP, save_model_path=os.path.join(cwd, "cache", "embedding_model.pt"))
@@ -95,7 +97,6 @@ def generate_embeddings(state: Annotated[dict, InjectedState]) -> dict:
     embeddings = inference_model.inference()
 
     # Save the embeddings to local storage
-    create_cache_dir()
     with open('embeddings.pkl', 'wb') as f:
         pkl.dump(embeddings, f)
 
