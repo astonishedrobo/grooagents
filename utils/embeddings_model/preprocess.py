@@ -20,7 +20,7 @@ def load_and_preprocess_data(data_path, continuous_cols, categorical_cols=None, 
     """
     print(f"Loading data from: {data_path}")
     df = pd.read_csv(data_path)
-
+    print()
     if continuous_cols:
     #   print(f"Continuous Columns: {continuous_cols}")
       # Check for any non-numeric values

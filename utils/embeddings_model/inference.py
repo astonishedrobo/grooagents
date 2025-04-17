@@ -16,7 +16,6 @@ class EmbeddingsInference:
         beta=2.0,
         continuous_cols=None,
         categorical_cols=None,
-        scaler_type="standard",
     ):
         # Configuration parameters
         self.data_file = data_file
@@ -26,7 +25,6 @@ class EmbeddingsInference:
         self.hidden_dims = hidden_dims
         self.latent_dim = latent_dim
         self.beta = beta
-        self.scaler_type = scaler_type
 
         if continuous_cols is None:
             self.continuous_cols = list(pd.read_csv(data_file).columns)
@@ -46,12 +44,7 @@ class EmbeddingsInference:
     def prepare_data(self):
         """Load and prepare the data for inference"""
         # Load and preprocess data
-        self.df = load_and_preprocess_data(
-            self.data_file, 
-            self.continuous_cols, 
-            self.categorical_cols, 
-            scaler_type=self.scaler_type
-        )
+        self.df = pd.read_csv(self.data_file)
 
         # Convert to tensor
         self.X = torch.tensor(self.df.values, dtype=torch.float32)
@@ -70,10 +63,13 @@ class EmbeddingsInference:
         )
         
         # Load the saved state dict
-        self.model.load_state_dict(torch.load(
-            self.model_path, 
-            map_location=torch.device('cpu')
-        ))
+        try:
+            self.model.load_state_dict(torch.load(
+                self.model_path, 
+                map_location=torch.device('cpu')
+            ))
+        except:
+            raise ValueError(f"Problem loading model from {self.model_path}. Check the path and try again.")
         
         # Set model to evaluation mode
         self.model.eval()

@@ -80,7 +80,6 @@ class EmbeddingsTrainer:
         train_ratio=0.8,
         continuous_cols=None,
         categorical_cols=None,
-        scaler_type="standard",
     ):
         # Configuration parameters
         self.data_file = data_file
@@ -95,7 +94,6 @@ class EmbeddingsTrainer:
         self.patience = patience
         self.grad_clip = grad_clip
         self.train_ratio = train_ratio
-        self.scaler_type = scaler_type
         
         # Set columns if not provided
         if continuous_cols is None:
@@ -111,12 +109,7 @@ class EmbeddingsTrainer:
     def prepare_data(self):
         """Load and prepare the data for training"""
         # Load and preprocess data
-        df = load_and_preprocess_data(
-            self.data_file, 
-            self.continuous_cols, 
-            self.categorical_cols, 
-            scaler_type=self.scaler_type
-        )
+        df = pd.read_csv(self.data_file)
         
         # Convert to tensor
         X = torch.tensor(df.values, dtype=torch.float32)
