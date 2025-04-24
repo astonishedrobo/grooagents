@@ -22,6 +22,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 import shap
 import threading
+import json
+
 ################## Helper Tools ##################
 def __llm(query: str, model, system_prompt: str = None):
     """
@@ -253,10 +255,28 @@ def clusterwise_shap_to_nlp(path: str, model) -> dict:
     Outputs:
     - SHAP tables are converted to natural language and saved to local storage.
     """
-    df = pd.read_csv(path)
-    for row in df.iterrows():
+    create_cache_dir()
 
-        pass
+    df = pd.read_csv(path)
+    descriptions = {}
+    for cluster in sorted(df['cluster'].unique()):
+        cluster_df = df[df['cluster'] == cluster]
+        features_list = cluster_df[['feature', 'mean_abs_shap', 'direction']].to_dict(orient='records')
+        system_prompt = (
+            "You are a data storyteller. You're given a list of key features that define a cluster. "
+            "Provide a human-readable summary describing the cluster's characteristics based on these features. "
+            "Do not mention SHAP values, technical metrics, or directions."
+        )
+        query = f"For cluster {cluster}, the top features are {features_list}. Describe the cluster in clear, user-friendly language."
+        response = __llm(query, model, system_prompt)
+        summary = response.content if hasattr(response, 'content') else str(response)
+        descriptions[f'Cluster_{cluster}'] = summary
+
+    # Save summaries to JSON
+    output_path = os.path.join(os.getcwd(), "cache", "clusterwise_shap_nlp.json")
+    with open(output_path, "w") as f:
+        json.dump(descriptions, f, indent=2)
+    return {'messages': 'Clusterwise SHAP tables converted to natural language and saved to local storage.'}
 
 
 def fi_reasoner(state: Annotated[dict, InjectedState]) -> bool:
@@ -434,7 +454,6 @@ def create_full_cluster_summary(shap_values, feature_names, X_data):
     return cluster_summaries, overall_summary_df
 
 # Document Querying
-
 def run_async(coro):
     """
     Synchronously run an async coroutine, whether or not there's
