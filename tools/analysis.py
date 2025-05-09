@@ -23,6 +23,7 @@ from sklearn.metrics import accuracy_score
 import shap
 import threading
 import json
+from rapidfuzz import process, fuzz
 
 ################## Helper Tools ##################
 def __llm(query: str, model, system_prompt: str = None):
@@ -76,6 +77,70 @@ def preprocess_data(scaler_type="standard"):
 
 
 ################## LLM Tools ##################
+
+@tool
+def table_lookup(query: str, limit: int = 1, score_cutoff: int = 60, file_path: str = None) -> dict:
+    """
+    Load a CSV file (from config or provided file_path), perform a fuzzy search across all cell values,
+    and return all rows containing the best-matching value as a Markdown-formatted mini-table.
+    If file_path is provided, it overrides the default CSV path from config.
+
+    Parameters
+    ----------
+    query : str
+        The search string (can include typos) to match against every cell. Only mention the column value to match.
+    limit : int
+        Number of top fuzzy matches to consider for cell values.
+    score_cutoff : int
+        Minimum similarity score (0-100) to accept a match.
+    file_path : str, optional
+        Path to the CSV file. If provided, overrides the default path from config.
+
+    Returns
+    -------
+    dict
+        A dictionary with 'messages' key containing either the markdown table or error message.
+    """
+    import os
+    import pandas as pd
+    from rapidfuzz import process, fuzz
+
+    # Resolve CSV path
+    if file_path:
+        csv_path = os.path.join(os.getcwd(), "cache", file_path)
+        print(csv_path)
+    else:
+        cwd = os.getcwd()
+        config = load_config()
+        csv_path = config.get("data_path", os.path.join(cwd, "input", "data.csv"))
+
+    if not os.path.exists(csv_path):
+        return {"messages": f"CSV file not found at {csv_path}"}
+
+    # Load data
+    df = pd.read_csv(csv_path)
+
+    # Build list of unique cell values
+    flat_vals = pd.Series(df.values.ravel()).astype(str).unique().tolist()
+
+    # Fuzzy-match query against cell values
+    best = process.extract(
+        query,
+        flat_vals,
+        scorer=fuzz.WRatio,
+        limit=limit,
+        score_cutoff=score_cutoff
+    )
+    if not best:
+        return {"messages": f"No close cell-value match for query: {query!r}"}
+    
+    best_value = best[0][0]
+
+    # Filter rows containing the matched value in any column
+    mask = df.astype(str).apply(lambda row: row.eq(best_value).any(), axis=1)
+    matched_rows = df[mask]
+
+    return {"messages": matched_rows.to_markdown(index=False)}
 
 @tool
 def load_file():
@@ -499,3 +564,72 @@ def kb_query(state: Annotated[dict, InjectedState], query: str) -> dict:
     with open(os.path.join(cwd, "cache", "drift_search_response.txt"), 'w') as f:
         f.write(response)
     return {"messages": response}
+
+@tool
+def visualize(state: Annotated[dict, InjectedState], query: str) -> dict:
+    """
+    Visualize the data using the given query.
+
+    Params:
+    - state: LangGraph state dictionary.
+    - query: The natural language query.
+
+    Returns:
+    - A dictionary containing the visualization result.
+    """
+    # Implement visualization logic here
+    pass
+    return {"messages": "Visualization result."}
+
+# Add new tool to list CSV files in cache directory
+@tool
+def list_cache_files() -> dict:
+    """
+    List all CSV files in the cache directory.
+    Returns a dict with 'messages' key containing the list of files.
+    """
+    import os
+    cache_dir = os.path.join(os.getcwd(), "cache")
+    if not os.path.exists(cache_dir):
+        return {"messages": "Cache directory not found."}
+    files = [f for f in os.listdir(cache_dir) if f.endswith('.csv')]
+    return {"messages": f"Available CSV files in cache: {', '.join(files)}"}
+
+@tool
+def peek_csv(file_path: str, num_rows: int = 1) -> dict:
+    """Show the structure and first few rows of a CSV file"""
+    try:
+        import pandas as pd
+        
+        # Read the CSV file
+        file_path = os.path.join(os.getcwd(), "cache", file_path) 
+        df = pd.read_csv(file_path)
+        
+        # Get column information
+        columns_info = {
+            'columns': list(df.columns),
+            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+            'non_null_counts': df.count().to_dict(),
+            'sample_rows': df.head(num_rows).to_dict('records')
+        }
+        
+        # Format the output message
+        message = f"CSV File Structure for {file_path}:\n\n"
+        message += "Columns:\n"
+        for col in columns_info['columns']:
+            message += f"- {col} ({columns_info['dtypes'][col]})\n"
+        
+        message += f"\nNon-null counts:\n"
+        for col, count in columns_info['non_null_counts'].items():
+            message += f"- {col}: {count}\n"
+        
+        message += f"\nFirst {num_rows} rows:\n"
+        for i, row in enumerate(columns_info['sample_rows']):
+            message += f"\nRow {i+1}:\n"
+            for col, val in row.items():
+                message += f"- {col}: {val}\n"
+        
+        return {"messages": message}
+        
+    except Exception as e:
+        return {"messages": f"Error reading CSV file: {str(e)}"}
