@@ -579,16 +579,39 @@ def kb_query(state: Annotated[dict, InjectedState], query: str) -> dict:
     import asyncio
     from grooagents.utils.kg_search import drift_search
     
-    # Create a new event loop in this thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    async def run_search():
+        return await drift_search(query)
     
     try:
-        # Run the async function in this loop
-        response = loop.run_until_complete(drift_search(query))
-    finally:
-        # Clean up
-        loop.close()
+        # Try to get the current event loop
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If a loop is running, create a new one in a separate thread
+            import threading
+            result = {}
+            def thread_target():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result['response'] = new_loop.run_until_complete(run_search())
+                finally:
+                    new_loop.close()
+            
+            thread = threading.Thread(target=thread_target)
+            thread.start()
+            thread.join()
+            response = result['response']
+        else:
+            # If no loop is running, use the current one
+            response = loop.run_until_complete(run_search())
+    except RuntimeError:
+        # If we can't get a loop, create a new one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            response = loop.run_until_complete(run_search())
+        finally:
+            loop.close()
     
     cwd = os.getcwd()
     # Save the response to local storage
