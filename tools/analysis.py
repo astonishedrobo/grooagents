@@ -30,6 +30,7 @@ def __llm(query: str, model, system_prompt: str = None):
     """
     Call the LLM with the given query and model and optional system prompt.
     """
+    model = ChatOpenAI(model=model, temperature=0.7)
     if system_prompt:
         messages = [
             SystemMessage(content=system_prompt),
@@ -79,7 +80,7 @@ def preprocess_data(scaler_type="standard"):
 ################## LLM Tools ##################
 
 @tool
-def table_lookup(query: str, limit: int = 1, score_cutoff: int = 60, file_path: str = None) -> dict:
+def table_lookup(value: str, primary_query: str, limit: int = 1, score_cutoff: int = 60, file_path: str = None) -> dict:
     """
     Load a CSV file (from config or provided file_path), perform a fuzzy search across all cell values,
     and return all rows containing the best-matching value as a Markdown-formatted mini-table.
@@ -87,8 +88,10 @@ def table_lookup(query: str, limit: int = 1, score_cutoff: int = 60, file_path: 
 
     Parameters
     ----------
-    query : str
+    value : str
         The search string (can include typos) to match against every cell. Only mention the column value to match.
+    primary_query : str
+        The primary query that the agent is trying to answer.
     limit : int
         Number of top fuzzy matches to consider for cell values.
     score_cutoff : int
@@ -125,14 +128,14 @@ def table_lookup(query: str, limit: int = 1, score_cutoff: int = 60, file_path: 
 
     # Fuzzy-match query against cell values
     best = process.extract(
-        query,
+        value,
         flat_vals,
         scorer=fuzz.WRatio,
         limit=limit,
         score_cutoff=score_cutoff
     )
     if not best:
-        return {"messages": f"No close cell-value match for query: {query!r}"}
+        return {"messages": f"No close cell-value match for query: {value!r}"}
     
     best_value = best[0][0]
 
@@ -140,7 +143,23 @@ def table_lookup(query: str, limit: int = 1, score_cutoff: int = 60, file_path: 
     mask = df.astype(str).apply(lambda row: row.eq(best_value).any(), axis=1)
     matched_rows = df[mask]
 
-    return {"messages": matched_rows.to_markdown(index=False)}
+    # Convert matched rows to markdown
+    markdown_table = matched_rows.to_markdown(index=False)
+
+    # Analyze the results using LLM to answer the primary query
+    system_prompt = (
+        "You are a data analyst. Given a query and a markdown table of results, "
+        "provide a clear, natural language answer to the query based on the data shown."
+    )
+    
+    analysis_query = f"Query: {primary_query}\n\nData:\n{markdown_table}\n\nPlease analyze this data to answer the query."
+    
+    # Use the existing __llm function to get the analysis
+    response = __llm(analysis_query, 'gpt-4o-mini', system_prompt)
+    analysis = response.content if hasattr(response, 'content') else str(response)
+    
+    return {"messages": f"Analysis: {analysis}"}
+    # return {"messages": matched_rows.to_markdown(index=False)}
 
 @tool
 def load_file():
@@ -557,7 +576,7 @@ def kb_query(state: Annotated[dict, InjectedState], query: str) -> dict:
     Returns:
     - A dictionary containing the search result.
     """
-    from grooagents.utils.kg import drift_search
+    from grooagents.utils.kg_search import drift_search
     response = run_async(drift_search(query))
     cwd = os.getcwd()
     # Save the response to local storage
@@ -633,3 +652,31 @@ def peek_csv(file_path: str, num_rows: int = 1) -> dict:
         
     except Exception as e:
         return {"messages": f"Error reading CSV file: {str(e)}"}
+
+@tool 
+def kg_indexing(state: Annotated[dict, InjectedState], file_type='text', input_dir="input") -> dict:
+    """
+    Index the knowledge graph.
+    
+    Params:
+    - file_type: ['text', 'str', 'json']. (default: 'text')
+    - input_dir: The directory to index. (default: 'input')
+    """
+    from grooagents.utils.kg_index import index_kg, update_input_config
+    import shutil
+
+    update_input_config({'file_type': file_type})
+    update_input_config({'base_dir': input_dir})
+
+    run_async(index_kg())
+
+    cache_dirs = ['community_reporting', 'extract_graph', 'summarize_descriptions', 'text_embedding']
+    for dir in cache_dirs:
+        # move the files to the new directory cache/kbgraph/cache
+        for file in os.listdir(os.path.join(os.getcwd(), "cache", dir)):
+            shutil.move(os.path.join(os.getcwd(), "cache", dir, file), os.path.join(os.getcwd(), "cache", "kbgraph", "cache", dir, file))
+        # delete the directory
+        shutil.rmtree(os.path.join(os.getcwd(), "cache", dir))
+        
+    return {"messages": "Knowledge graph indexed at cache/kbgraph."}
+    
