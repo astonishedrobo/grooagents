@@ -24,7 +24,6 @@ import shap
 import threading
 import json
 from rapidfuzz import process, fuzz
-import tiktoken
 
 ################## Helper Tools ##################
 def __llm(query: str, model, system_prompt: str = None):
@@ -146,26 +145,6 @@ def table_lookup(value: str, primary_query: str, limit: int = 1, score_cutoff: i
 
     # Convert matched rows to markdown
     markdown_table = matched_rows.to_markdown(index=False)
-
-    # Ensure the total query doesn't exceed token limit
-    enc = tiktoken.encoding_for_model('gpt-4.1-mini-2025-04-14')
-    
-    # Calculate tokens for the fixed parts of the query
-    query_template = f"Query: {primary_query}\n\nData:\n[TABLE]\n\nPlease analyze this data to answer the query."
-    fixed_tokens = len(enc.encode(query_template.replace('[TABLE]', '')))
-    
-    # Calculate available tokens for the table
-    max_tokens = 90000  # Maximum context window
-    available_tokens = max_tokens - fixed_tokens - 100  # Leave 100 tokens as buffer
-    
-    # Trim the table if it exceeds available tokens
-    table_tokens = len(enc.encode(markdown_table))
-    if table_tokens > available_tokens:
-        # Calculate roughly how many rows we can keep
-        tokens_per_row = table_tokens / len(matched_rows)
-        max_rows = int(available_tokens / tokens_per_row)
-        matched_rows = matched_rows.head(max_rows)
-        markdown_table = matched_rows.to_markdown(index=False)
 
     # Analyze the results using LLM to answer the primary query
     system_prompt = (
@@ -597,12 +576,25 @@ def kb_query(state: Annotated[dict, InjectedState], query: str) -> dict:
     Returns:
     - A dictionary containing the search result.
     """
+    import asyncio
     from grooagents.utils.kg_search import drift_search
-    response = run_async(drift_search(query))
+    
+    # Create a new event loop in this thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        # Run the async function in this loop
+        response = loop.run_until_complete(drift_search(query))
+    finally:
+        # Clean up
+        loop.close()
+    
     cwd = os.getcwd()
     # Save the response to local storage
     with open(os.path.join(cwd, "cache", "drift_search_response.txt"), 'w') as f:
         f.write(response)
+    
     return {"messages": response}
 
 @tool
